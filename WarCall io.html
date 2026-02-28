@@ -1,0 +1,1011 @@
+(function() {
+    var rt = window.__RT || (typeof cr_getC2Runtime === 'function' ? cr_getC2Runtime() : null);
+    if (!rt) { console.error('No RT'); return; }
+    window.__RT = rt;
+
+    function getPlayer()  { var t=rt.types['t51']; return t&&t.instances[0]?t.instances[0]:null; }
+    function getEnemies() { var t=rt.types['t50']; return t?t.instances:[]; }
+    function getGold()    { var t=rt.types['t60']; return t&&t.instances[0]?t.instances[0]:null; }
+    function findText(l)  {
+        var t=rt.types['t114']; if(!t) return null;
+        for(var i=0;i<t.instances.length;i++) if(t.instances[i].instance_vars[0]===l) return t.instances[i];
+        return null;
+    }
+
+    var IV = {};
+    function clr(k){ if(IV[k]){clearInterval(IV[k]);delete IV[k];} }
+
+    // ============================================================
+    // CHEATS
+    // iv[17], iv[37] = SPEED (реально меняет скорость)
+    // iv[20]         = HP текущий
+    // iv[18]         = HP макс
+    // iv[33]         = Attack speed
+    // для урона берём те же что instant kill использует на врагах
+    // ============================================================
+
+    var C = {
+        // GOD MODE
+        godMode: function(on) {
+            rt.all_global_vars[3].data = on?1:0;
+            clr('god');
+            if(on) IV['god']=setInterval(function(){
+                var p=getPlayer(); if(!p) return;
+                var v=p.instance_vars;
+                v[20]=v[18]; v[21]=v[18]; v[73]=v[18];
+                v[23]=v[22]; v[74]=v[22];
+                v[38]=0; v[8]=0;
+            },50);
+        },
+
+        // SPEED HACK — iv[17] и iv[37] реально двигают игрока
+        setSpeed: function(val) {
+            clr('spd');
+            IV['spd']=setInterval(function(){
+                var p=getPlayer(); if(!p) return;
+                var v=p.instance_vars;
+                v[17]=val;
+                v[37]=val;
+            },16);
+        },
+        stopSpeed: function() {
+            clr('spd');
+            var p=getPlayer(); if(!p) return;
+            p.instance_vars[17]=265;
+            p.instance_vars[37]=265;
+        },
+
+        // DAMAGE — ставим урон врагам напрямую в минус
+        // instant kill использует iv[20]=-9999 на врагах
+        // значит урон идёт через HP врага
+        // для своего урона пишем в те же поля что instant kill но через множитель
+        setDamage: function(val) {
+            clr('dmg');
+            IV['dmg']=setInterval(function(){
+                var p=getPlayer(); if(!p) return;
+                // Урон хранится отдельно от скорости
+                // iv[37] = скорость, поэтому урон ищем в других местах
+                // На основе instant kill логики — HP врага уменьшается
+                // Поэтому делаем: при атаке сразу дампим HP врагов рядом
+                var px=p.x, py=p.y;
+                var range=parseFloat(document.getElementById('sv-dmgrange')?
+                    document.getElementById('sv-dmgrange').textContent:600);
+                getEnemies().forEach(function(e){
+                    var dx=e.x-px, dy=e.y-py;
+                    var dist=Math.sqrt(dx*dx+dy*dy);
+                    if(dist<range){
+                        // уменьшаем HP врага на val каждые 16мс = огромный урон
+                        e.instance_vars[20]-=val*0.016;
+                        e.instance_vars[21]=e.instance_vars[20];
+                        e.instance_vars[73]=e.instance_vars[20];
+                    }
+                });
+            },16);
+        },
+        stopDamage: function(){ clr('dmg'); },
+
+        // INSTANT KILL
+        instantKill: function(on){
+            clr('ik');
+            if(on) IV['ik']=setInterval(function(){
+                getEnemies().forEach(function(e){
+                    e.instance_vars[20]=-9999;
+                    e.instance_vars[21]=-9999;
+                    e.instance_vars[73]=-9999;
+                });
+            },16);
+        },
+
+        // FREEZE — iv[17]=0 на врагах (та же логика что скорость)
+        freeze: function(on){
+            clr('frz');
+            if(on){
+                IV['frz']=setInterval(function(){
+                    getEnemies().forEach(function(e){
+                        // iv[17] и iv[37] — скорость, ставим в 0
+                        e.instance_vars[17]=0;
+                        e.instance_vars[37]=0;
+                        // также iv[41] и iv[24]
+                        e.instance_vars[41]=0;
+                        e.instance_vars[24]=0;
+                        // behaviors
+                        if(e.behavior_insts) e.behavior_insts.forEach(function(b){
+                            if('maxSpeed' in b) b.maxSpeed=0;
+                            if('speed'    in b) b.speed=0;
+                            if('vel'      in b) b.vel=0;
+                            if('maxvel'   in b) b.maxvel=0;
+                            if('acc'      in b) b.acc=0;
+                        });
+                    });
+                },16);
+            } else {
+                getEnemies().forEach(function(e){
+                    e.instance_vars[17]=265;
+                    e.instance_vars[37]=265;
+                    e.instance_vars[41]=4.7;
+                    e.instance_vars[24]=50;
+                });
+            }
+        },
+
+        // ATK SPEED
+        setAtkSpd: function(val){
+            clr('atk');
+            IV['atk']=setInterval(function(){
+                var p=getPlayer(); if(!p) return;
+                p.instance_vars[33]=val;
+            },50);
+        },
+        stopAtkSpd: function(){ clr('atk'); },
+
+        setHP:    function(v){ var p=getPlayer();if(!p)return; p.instance_vars[18]=v;p.instance_vars[20]=v;p.instance_vars[21]=v;p.instance_vars[73]=v; },
+        setGold:  function(v){ var g=getGold();if(g)g.instance_vars[0]=v; var p=getPlayer();if(p)p.instance_vars[71]=v; var t=findText('Gold');if(t)t.instance_vars[1]=String(v); },
+        setLevel: function(v){ var p=getPlayer();if(p)p.instance_vars[5]=v; },
+        setXP:    function(v){ var p=getPlayer();if(p)p.instance_vars[45]=v; },
+        setKills: function(v){ var p=getPlayer();if(p)p.instance_vars[35]=v; },
+        killAll:  function(){
+            getEnemies().forEach(function(e){
+                e.instance_vars[20]=-9999;
+                e.instance_vars[21]=-9999;
+                e.instance_vars[73]=-9999;
+            });
+        },
+        stopAll: function(){
+            Object.keys(IV).forEach(function(k){clearInterval(IV[k]);});
+            IV={};
+            rt.all_global_vars[3].data=0;
+            var p=getPlayer();
+            if(p){ p.instance_vars[17]=265; p.instance_vars[37]=265; }
+            getEnemies().forEach(function(e){
+                e.instance_vars[17]=265; e.instance_vars[37]=265;
+                e.instance_vars[41]=4.7; e.instance_vars[24]=50;
+            });
+        }
+    };
+
+    // ============================================================
+    // REMOVE OLD
+    // ============================================================
+    ['__wcm','__wcm_s'].forEach(function(id){ var e=document.getElementById(id);if(e)e.remove(); });
+    clearInterval(window.__wcIT);
+
+    // ============================================================
+    // CSS
+    // ============================================================
+    var css=document.createElement('style');
+    css.id='__wcm_s';
+    css.textContent=`
+        @import url('https://fonts.googleapis.com/css2?family=Verdana&display=swap');
+
+        #__wcm {
+            position: fixed;
+            top: 30px;
+            right: 0;
+            width: 520px;
+            height: 720px;
+            background: #181818;
+            border: 1px solid #383838;
+            border-right: none;
+            z-index: 999999;
+            font-family: Verdana, Geneva, sans-serif;
+            font-size: 13px;
+            color: #c8c8c8;
+            display: flex;
+            flex-direction: column;
+            user-select: none;
+        }
+        #__wcm * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        /* WATERMARK */
+        #__wcm .W {
+            background: #111;
+            border-bottom: 1px solid #383838;
+            padding: 10px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+            cursor: move;
+        }
+        #__wcm .W-name {
+            font-size: 15px;
+            font-weight: bold;
+            color: #fff;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+        }
+        #__wcm .W-sub { font-size: 11px; color: #444; margin-top: 2px; }
+        #__wcm .W-key { font-size: 11px; color: #444; text-align: right; }
+
+        /* TABS */
+        #__wcm .TB {
+            display: flex;
+            border-bottom: 2px solid #282828;
+            flex-shrink: 0;
+        }
+        #__wcm .TB-t {
+            flex: 1;
+            padding: 9px 6px;
+            text-align: center;
+            cursor: pointer;
+            background: #111;
+            color: #505050;
+            font-size: 12px;
+            font-family: Verdana, sans-serif;
+            font-weight: bold;
+            border-right: 1px solid #282828;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: background 0.1s, color 0.1s;
+        }
+        #__wcm .TB-t:last-child { border-right: none; }
+        #__wcm .TB-t:hover { background: #1c1c1c; color: #888; }
+        #__wcm .TB-t.on { background: #1e1e1e; color: #fff; border-bottom: 2px solid #aaa; }
+
+        /* CONTENT = flex row */
+        #__wcm .CT {
+            flex: 1;
+            display: none;
+            overflow: hidden;
+            gap: 0;
+        }
+        #__wcm .CT.on { display: flex; }
+
+        /* COLUMN */
+        #__wcm .COL {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            border-right: 1px solid #222;
+        }
+        #__wcm .COL:last-child { border-right: none; }
+        #__wcm .COL::-webkit-scrollbar { width: 4px; }
+        #__wcm .COL::-webkit-scrollbar-track { background: #111; }
+        #__wcm .COL::-webkit-scrollbar-thumb { background: #333; }
+
+        /* SECTION BLOCK */
+        #__wcm .SEC {
+            margin: 12px 10px 0 10px;
+            border: 1px solid #2a2a2a;
+        }
+        #__wcm .SEC:last-child { margin-bottom: 12px; }
+        #__wcm .SEC-H {
+            background: #111;
+            border-bottom: 1px solid #2a2a2a;
+            padding: 5px 10px;
+            font-size: 10px;
+            color: #505050;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+        }
+        #__wcm .SEC-H-ico { font-size: 13px; color: #666; }
+
+        /* TOGGLE ROW */
+        #__wcm .TR {
+            display: flex;
+            align-items: center;
+            padding: 9px 10px;
+            border-bottom: 1px solid #1f1f1f;
+            cursor: pointer;
+            gap: 10px;
+            transition: background 0.1s;
+        }
+        #__wcm .TR:last-child { border-bottom: none; }
+        #__wcm .TR:hover { background: #1e1e1e; }
+        #__wcm .TR.on { background: #1d1d1d; }
+
+        /* Square checkbox */
+        #__wcm .SQ {
+            width: 14px; height: 14px;
+            border: 1px solid #3a3a3a;
+            background: #0c0c0c;
+            flex-shrink: 0;
+            position: relative;
+        }
+        #__wcm .SQ.on { border-color: #888; }
+        #__wcm .SQ.on::after {
+            content:'';
+            position:absolute;
+            top:2px;left:2px;right:2px;bottom:2px;
+            background:#fff;
+        }
+        #__wcm .TR-ico { font-size: 15px; width: 20px; text-align: center; flex-shrink: 0; }
+        #__wcm .TR-lbl { flex:1; font-size: 13px; color: #999; }
+        #__wcm .TR.on .TR-lbl { color: #fff; }
+        #__wcm .TR-tag {
+            font-size: 10px; color: #404040;
+            background: #181818;
+            border: 1px solid #282828;
+            padding: 2px 6px;
+            font-family: Verdana, sans-serif;
+        }
+        #__wcm .TR.on .TR-tag { color: #aaa; border-color: #404040; }
+
+        /* SLIDER */
+        #__wcm .SLR { padding: 10px 10px 10px 10px; border-bottom: 1px solid #1f1f1f; }
+        #__wcm .SLR:last-child { border-bottom: none; }
+        #__wcm .SLR-TOP {
+            display: flex; align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        #__wcm .SLR-L { display: flex; align-items: center; gap: 8px; }
+        #__wcm .SLR-ICO { font-size: 15px; }
+        #__wcm .SLR-LBL { font-size: 13px; color: #999; }
+        #__wcm .SLR-VAL {
+            font-size: 13px; color: #fff; font-weight: bold;
+            font-family: Verdana, sans-serif;
+            min-width: 60px; text-align: right;
+        }
+        /* track */
+        #__wcm .TRK {
+            width: 100%; height: 14px;
+            background: #0c0c0c;
+            border: 1px solid #333;
+            position: relative;
+            cursor: pointer;
+        }
+        #__wcm .TRK:hover { border-color: #555; }
+        #__wcm .TRK-F {
+            position:absolute; top:0; left:0;
+            height:100%; background:#383838;
+            pointer-events:none;
+        }
+        #__wcm .TRK-T {
+            position:absolute; top:-3px;
+            width:3px; height:20px;
+            background:#fff;
+            pointer-events:none;
+            transform:translateX(-1px);
+        }
+
+        /* BUTTON */
+        #__wcm .BT-ROW {
+            display: flex;
+            border-bottom: 1px solid #1f1f1f;
+        }
+        #__wcm .BT-ROW:last-child { border-bottom: none; }
+        #__wcm .BT {
+            flex:1; padding: 9px 8px;
+            background: #161616;
+            border: none;
+            border-right: 1px solid #242424;
+            color: #888;
+            font-size: 12px;
+            cursor: pointer;
+            font-family: Verdana, sans-serif;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex; align-items: center;
+            justify-content: center; gap: 6px;
+        }
+        #__wcm .BT:last-child { border-right: none; }
+        #__wcm .BT:hover { background: #202020; color: #fff; }
+        #__wcm .BT:active { background: #282828; }
+        #__wcm .BT.red { color: #aa3333; }
+        #__wcm .BT.red:hover { background: #1c1010; color: #ff5555; }
+        #__wcm .BT.grn { color: #336633; }
+        #__wcm .BT.grn:hover { background: #101c10; color: #55aa55; }
+        #__wcm .BT-ICO { font-size: 14px; }
+
+        /* INPUT ROW */
+        #__wcm .IR {
+            display: flex; align-items: center;
+            padding: 8px 10px;
+            border-bottom: 1px solid #1f1f1f;
+            gap: 8px;
+        }
+        #__wcm .IR:last-child { border-bottom: none; }
+        #__wcm .IR-ICO { font-size: 14px; flex-shrink: 0; }
+        #__wcm .IR-LBL { color: #666; font-size: 12px; flex-shrink: 0; width: 55px; }
+        #__wcm .IR-INP {
+            flex:1; background:#0c0c0c;
+            border: 1px solid #333; color: #fff;
+            font-size: 12px; font-family: Verdana, sans-serif;
+            padding: 5px 7px; outline: none;
+        }
+        #__wcm .IR-INP:focus { border-color: #666; }
+        #__wcm .IR-BTN {
+            background: #1e1e1e; border: 1px solid #333;
+            color: #888; font-size: 11px;
+            padding: 5px 10px; cursor: pointer;
+            font-family: Verdana, sans-serif;
+            letter-spacing: 1px;
+        }
+        #__wcm .IR-BTN:hover { background: #282828; color: #fff; border-color: #555; }
+
+        /* INFO ROW */
+        #__wcm .INF {
+            display: flex; align-items: center;
+            justify-content: space-between;
+            padding: 7px 10px;
+            border-bottom: 1px solid #1f1f1f;
+        }
+        #__wcm .INF:last-child { border-bottom: none; }
+        #__wcm .INF-L { display: flex; align-items: center; gap: 8px; color: #555; font-size: 12px; }
+        #__wcm .INF-ICO { font-size: 14px; }
+        #__wcm .INF-V { color: #fff; font-size: 12px; font-weight: bold; }
+
+        /* BAR */
+        #__wcm .BAR-W { padding: 0 10px 8px; }
+        #__wcm .BAR { height: 3px; background: #1a1a1a; border: 1px solid #252525; }
+        #__wcm .BAR-F { height: 100%; transition: width 0.3s; }
+        #__wcm .BAR-F.hp   { background: #7a2222; }
+        #__wcm .BAR-F.mana { background: #224477; }
+
+        /* STATUS */
+        #__wcm .ST {
+            background: #0e0e0e;
+            border-top: 1px solid #282828;
+            padding: 5px 12px;
+            display: flex; justify-content: space-between;
+            align-items: center; flex-shrink: 0;
+        }
+        #__wcm .ST-L { font-size: 10px; color: #2a2a2a; letter-spacing: 2px; }
+        #__wcm .ST-R { font-size: 11px; color: #505050; }
+    `;
+    document.head.appendChild(css);
+
+    // ============================================================
+    // HTML
+    // ============================================================
+    var menu=document.createElement('div');
+    menu.id='__wcm';
+    menu.innerHTML=`
+        <div class="W" id="__wdr">
+            <div>
+                <div class="W-name">WarCall Cheats</div>
+                <div class="W-sub">Construct 2 Runtime Hook v3.2</div>
+            </div>
+            <div class="W-key">[ INSERT ] — hide / show</div>
+        </div>
+
+        <div class="TB">
+            <div class="TB-t on" data-t="combat">&#9876; Combat</div>
+            <div class="TB-t" data-t="player">&#9881; Player</div>
+            <div class="TB-t" data-t="world">&#9670; World</div>
+            <div class="TB-t" data-t="info">&#128202; Info</div>
+        </div>
+
+        <!-- ===== COMBAT ===== -->
+        <div class="CT on" id="T-combat">
+            <!-- LEFT -->
+            <div class="COL">
+                <div class="SEC">
+                    <div class="SEC-H"><span class="SEC-H-ico">&#10009;</span> Survival</div>
+                    <div class="TR" data-k="godMode">
+                        <div class="SQ" id="sq-godMode"></div>
+                        <span class="TR-ico">&#10084;</span>
+                        <span class="TR-lbl">God Mode</span>
+                        <span class="TR-tag">INVINCIBLE</span>
+                    </div>
+                    <div class="TR" data-k="instantKill">
+                        <div class="SQ" id="sq-instantKill"></div>
+                        <span class="TR-ico">&#9760;</span>
+                        <span class="TR-lbl">Instant Kill</span>
+                        <span class="TR-tag">ALL ENEMIES</span>
+                    </div>
+                    <div class="TR" data-k="freeze">
+                        <div class="SQ" id="sq-freeze"></div>
+                        <span class="TR-ico">&#10052;</span>
+                        <span class="TR-lbl">Freeze Enemies</span>
+                        <span class="TR-tag">STOP MOVE</span>
+                    </div>
+                </div>
+
+                <div class="SEC">
+                    <div class="SEC-H"><span class="SEC-H-ico">&#9876;</span> Speed Hack</div>
+                    <div class="SLR">
+                        <div class="SLR-TOP">
+                            <div class="SLR-L">
+                                <span class="SLR-ICO">&#9872;</span>
+                                <span class="SLR-LBL">Player Speed</span>
+                            </div>
+                            <span class="SLR-VAL" id="sv-spd">265</span>
+                        </div>
+                        <div class="TRK" id="st-spd" data-mn="1" data-mx="9999" data-vl="265" data-st="1">
+                            <div class="TRK-F" id="sf-spd"></div>
+                            <div class="TRK-T" id="sth-spd"></div>
+                        </div>
+                    </div>
+                    <div class="TR" data-k="spdLock">
+                        <div class="SQ" id="sq-spdLock"></div>
+                        <span class="TR-ico">&#128274;</span>
+                        <span class="TR-lbl">Lock Speed</span>
+                        <span class="TR-tag">FORCE</span>
+                    </div>
+                </div>
+
+                <div class="SEC">
+                    <div class="SEC-H"><span class="SEC-H-ico">&#9889;</span> Attack</div>
+                    <div class="SLR">
+                        <div class="SLR-TOP">
+                            <div class="SLR-L">
+                                <span class="SLR-ICO">&#9889;</span>
+                                <span class="SLR-LBL">Attack Speed</span>
+                            </div>
+                            <span class="SLR-VAL" id="sv-atk">0.20</span>
+                        </div>
+                        <div class="TRK" id="st-atk" data-mn="0.01" data-mx="1" data-vl="0.2" data-st="0.01">
+                            <div class="TRK-F" id="sf-atk"></div>
+                            <div class="TRK-T" id="sth-atk"></div>
+                        </div>
+                    </div>
+                    <div class="TR" data-k="atkLock">
+                        <div class="SQ" id="sq-atkLock"></div>
+                        <span class="TR-ico">&#128274;</span>
+                        <span class="TR-lbl">Lock Atk Speed</span>
+                        <span class="TR-tag">FORCE</span>
+                    </div>
+                </div>
+
+                <div class="SEC">
+                    <div class="SEC-H"><span class="SEC-H-ico">&#9654;</span> Actions</div>
+                    <div class="BT-ROW">
+                        <button class="BT red" id="B-killall"><span class="BT-ICO">&#9760;</span>Kill All</button>
+                        <button class="BT grn" id="B-maxall"><span class="BT-ICO">&#9650;</span>Max All</button>
+                    </div>
+                    <div class="BT-ROW">
+                        <button class="BT" id="B-stopall"><span class="BT-ICO">&#9632;</span>Stop All Cheats</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT -->
+            <div class="COL">
+                <div class="SEC">
+                    <div class="SEC-H"><span class="SEC-H-ico">&#128202;</span> Live Combat</div>
+                    <div class="INF">
+                        <div class="INF-L"><span class="INF-ICO">&#9876;</span>Speed val (iv17)</div>
+                        <div class="INF-V" id="ci-spd17">-</div>
+                    </div>
+                    <div class="INF">
+                        <div class="INF-L"><span class="INF-ICO">&#9876;</span>Speed val (iv37)</div>
+                        <div class="INF-V" id="ci-spd37">-</div>
+                    </div>
+                    <div class="INF">
+                        <div class="INF-L"><span class="INF-ICO">&#9889;</span>Atk Speed (iv33)</div>
+                        <div class="INF-V" id="ci-atkspd">-</div>
+                    </div>
+                    <div class="INF">
+                        <div class="INF-L"><span class="INF-ICO">&#128202;</span>Enemies Alive</div>
+                        <div class="INF-V" id="ci-enm">-</div>
+                    </div>
+                    <div class="INF">
+                        <div class="INF-L"><span class="INF-ICO">&#9733;</span>Kills</div>
+                        <div class="INF-V" id="ci-kl">-</div>
+                    </div>
+                    <div class="INF">
+                        <div class="INF-L"><span class="INF-ICO">&#128128;</span>Deaths</div>
+                        <div class="INF-V" id="ci-dt">-</div>
+                    </div>
+                </div>
+
+                <div class="SEC">
+                    <div class="SEC-H"><span class="SEC-H-ico">&#9776;</span> Active Cheats</div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#10084;</span>God Mode</div><div class="INF-V" id="ci-god">OFF</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#9760;</span>Instant Kill</div><div class="INF-V" id="ci-ik">OFF</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#10052;</span>Freeze</div><div class="INF-V" id="ci-frz">OFF</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#9872;</span>Speed Lock</div><div class="INF-V" id="ci-slk">OFF</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#9889;</span>Atk Lock</div><div class="INF-V" id="ci-alk">OFF</div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== PLAYER ===== -->
+        <div class="CT" id="T-player">
+            <div class="COL">
+                <div class="SEC">
+                    <div class="SEC-H"><span class="SEC-H-ico">&#10084;</span> Health</div>
+                    <div class="SLR">
+                        <div class="SLR-TOP">
+                            <div class="SLR-L"><span class="SLR-ICO">&#10084;</span><span class="SLR-LBL">Max HP</span></div>
+                            <span class="SLR-VAL" id="sv-hp">1200</span>
+                        </div>
+                        <div class="TRK" id="st-hp" data-mn="100" data-mx="99999" data-vl="1200" data-st="100">
+                            <div class="TRK-F" id="sf-hp"></div>
+                            <div class="TRK-T" id="sth-hp"></div>
+                        </div>
+                    </div>
+                    <div class="BT-ROW">
+                        <button class="BT grn" id="B-fullhp"><span class="BT-ICO">&#10084;</span>Full HP</button>
+                        <button class="BT" id="B-fullmana"><span class="BT-ICO">&#9670;</span>Full Mana</button>
+                    </div>
+                </div>
+
+                <div class="SEC">
+                    <div class="SEC-H"><span class="SEC-H-ico">&#9998;</span> Set Values</div>
+                    <div class="IR">
+                        <span class="IR-ICO">&#128176;</span>
+                        <span class="IR-LBL">Gold</span>
+                        <input class="IR-INP" type="number" id="I-gold" value="99999">
+                        <button class="IR-BTN" id="B-gold">SET</button>
+                    </div>
+                    <div class="IR">
+                        <span class="IR-ICO">&#9733;</span>
+                        <span class="IR-LBL">Level</span>
+                        <input class="IR-INP" type="number" id="I-level" value="99">
+                        <button class="IR-BTN" id="B-level">SET</button>
+                    </div>
+                    <div class="IR">
+                        <span class="IR-ICO">&#9652;</span>
+                        <span class="IR-LBL">XP</span>
+                        <input class="IR-INP" type="number" id="I-xp" value="999999">
+                        <button class="IR-BTN" id="B-xp">SET</button>
+                    </div>
+                    <div class="IR">
+                        <span class="IR-ICO">&#9876;</span>
+                        <span class="IR-LBL">Kills</span>
+                        <input class="IR-INP" type="number" id="I-kills" value="9999">
+                        <button class="IR-BTN" id="B-kills">SET</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="COL">
+                <div class="SEC">
+                    <div class="SEC-H"><span class="SEC-H-ico">&#128100;</span> Live Stats</div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#128100;</span>Nick</div><div class="INF-V" id="pi-nick">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#9876;</span>Champion</div><div class="INF-V" id="pi-champ">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#9733;</span>Level</div><div class="INF-V" id="pi-lv">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#10084;</span>HP</div><div class="INF-V" id="pi-hp">-</div></div>
+                </div>
+                <div class="BAR-W"><div class="BAR"><div class="BAR-F hp" id="pi-hpb" style="width:100%"></div></div></div>
+                <div class="SEC">
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#9670;</span>Mana</div><div class="INF-V" id="pi-mana">-</div></div>
+                </div>
+                <div class="BAR-W"><div class="BAR"><div class="BAR-F mana" id="pi-manab" style="width:100%"></div></div></div>
+                <div class="SEC">
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#9872;</span>Speed iv17</div><div class="INF-V" id="pi-spd">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#128176;</span>Gold</div><div class="INF-V" id="pi-gold">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#9652;</span>XP</div><div class="INF-V" id="pi-xp">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#128205;</span>Position</div><div class="INF-V" id="pi-pos">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#9776;</span>UID</div><div class="INF-V" id="pi-uid">-</div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== WORLD ===== -->
+        <div class="CT" id="T-world">
+            <div class="COL">
+                <div class="SEC">
+                    <div class="SEC-H"><span class="SEC-H-ico">&#9654;</span> Quick Actions</div>
+                    <div class="BT-ROW">
+                        <button class="BT" id="B-gold999"><span class="BT-ICO">&#128176;</span>+999999 Gold</button>
+                    </div>
+                    <div class="BT-ROW">
+                        <button class="BT" id="B-lv99"><span class="BT-ICO">&#9733;</span>Level 99</button>
+                        <button class="BT" id="B-xpmax"><span class="BT-ICO">&#9652;</span>Max XP</button>
+                    </div>
+                    <div class="BT-ROW">
+                        <button class="BT grn" id="B-fhp2"><span class="BT-ICO">&#10084;</span>Full HP</button>
+                        <button class="BT" id="B-fmana2"><span class="BT-ICO">&#9670;</span>Full Mana</button>
+                    </div>
+                </div>
+                <div class="SEC">
+                    <div class="SEC-H"><span class="SEC-H-ico">&#9776;</span> Display</div>
+                    <div class="TR" data-k="watchTitle">
+                        <div class="SQ" id="sq-watchTitle"></div>
+                        <span class="TR-ico">&#9998;</span>
+                        <span class="TR-lbl">Stats in Tab Title</span>
+                        <span class="TR-tag">TITLE</span>
+                    </div>
+                </div>
+            </div>
+            <div class="COL">
+                <div class="SEC">
+                    <div class="SEC-H"><span class="SEC-H-ico">&#128202;</span> Session</div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#9776;</span>Layout</div><div class="INF-V" id="wi-lay">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#9760;</span>Enemies</div><div class="INF-V" id="wi-enm">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#9733;</span>Kills</div><div class="INF-V" id="wi-kl">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#128176;</span>Gold</div><div class="INF-V" id="wi-gold">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#128205;</span>Position</div><div class="INF-V" id="wi-pos">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#9881;</span>FPS</div><div class="INF-V" id="wi-fps">-</div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== INFO ===== -->
+        <div class="CT" id="T-info">
+            <div class="COL">
+                <div class="SEC">
+                    <div class="SEC-H"><span class="SEC-H-ico">&#128100;</span> Identity</div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#128100;</span>Nick</div><div class="INF-V" id="ii-nick">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#9876;</span>Champion</div><div class="INF-V" id="ii-champ">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#127894;</span>Skin</div><div class="INF-V" id="ii-skin">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#9776;</span>UID</div><div class="INF-V" id="ii-uid">-</div></div>
+                </div>
+                <div class="SEC">
+                    <div class="SEC-H"><span class="SEC-H-ico">&#9776;</span> Stats</div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#9733;</span>Level</div><div class="INF-V" id="ii-lv">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#9652;</span>XP</div><div class="INF-V" id="ii-xp">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#10084;</span>HP</div><div class="INF-V" id="ii-hp">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#9670;</span>Mana</div><div class="INF-V" id="ii-mana">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#9872;</span>Speed iv17</div><div class="INF-V" id="ii-spd">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#9889;</span>Atk Spd iv33</div><div class="INF-V" id="ii-atkspd">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#128176;</span>Gold</div><div class="INF-V" id="ii-gold">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#9733;</span>Kills</div><div class="INF-V" id="ii-kl">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#128128;</span>Deaths</div><div class="INF-V" id="ii-dt">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#128205;</span>Position</div><div class="INF-V" id="ii-pos">-</div></div>
+                    <div class="INF"><div class="INF-L"><span class="INF-ICO">&#9881;</span>FPS</div><div class="INF-V" id="ii-fps">-</div></div>
+                </div>
+            </div>
+            <div class="COL">
+                <div class="SEC">
+                    <div class="SEC-H"><span class="SEC-H-ico">&#128202;</span> All Instance Vars</div>
+                    <div id="ii-vars" style="padding:6px 10px;font-size:11px;color:#666;line-height:1.8;"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="ST">
+            <span class="ST-L">WARCALL CHEAT v3.2</span>
+            <span class="ST-R" id="__ST">ready</span>
+        </div>
+    `;
+    document.body.appendChild(menu);
+
+    // ============================================================
+    // STATE
+    // ============================================================
+    var ST={godMode:false,instantKill:false,freeze:false,spdLock:false,atkLock:false,watchTitle:false};
+    var STV={spd:265,atk:0.2,hp:1200};
+
+    function msg(t){var e=document.getElementById('__ST');if(e)e.textContent=t;}
+
+    // ============================================================
+    // TABS
+    // ============================================================
+    menu.querySelectorAll('.TB-t').forEach(function(t){
+        t.addEventListener('click',function(){
+            menu.querySelectorAll('.TB-t').forEach(function(x){x.classList.remove('on');});
+            menu.querySelectorAll('.CT').forEach(function(x){x.classList.remove('on');});
+            t.classList.add('on');
+            document.getElementById('T-'+t.dataset.t).classList.add('on');
+        });
+    });
+
+    // ============================================================
+    // TOGGLES
+    // ============================================================
+    var TM={
+        godMode:     function(on){C.godMode(on);msg('God Mode '+(on?'ON':'OFF'));},
+        instantKill: function(on){C.instantKill(on);msg('Instant Kill '+(on?'ON':'OFF'));},
+        freeze:      function(on){C.freeze(on);msg('Freeze '+(on?'ON':'OFF'));},
+        spdLock:     function(on){if(on)C.setSpeed(STV.spd);else C.stopSpeed();msg('Speed Lock '+(on?'ON':'OFF'));},
+        atkLock:     function(on){if(on)C.setAtkSpd(STV.atk);else C.stopAtkSpd();msg('Atk Lock '+(on?'ON':'OFF'));},
+        watchTitle:  function(on){if(!on)document.title='WarCall.io';msg('Watch '+(on?'ON':'OFF'));}
+    };
+
+    function setTog(k,on){
+        ST[k]=on;
+        var sq=document.getElementById('sq-'+k);
+        var row=sq?sq.closest('.TR'):null;
+        if(sq){on?sq.classList.add('on'):sq.classList.remove('on');}
+        if(row){on?row.classList.add('on'):row.classList.remove('on');}
+        if(TM[k])TM[k](on);
+    }
+
+    menu.querySelectorAll('.TR[data-k]').forEach(function(row){
+        row.addEventListener('click',function(){
+            setTog(row.dataset.k,!ST[row.dataset.k]);
+        });
+    });
+
+    // ============================================================
+    // SLIDERS
+    // ============================================================
+    function initSlider(tid,cb){
+        var tr=document.getElementById(tid); if(!tr) return;
+        var mn=parseFloat(tr.dataset.mn);
+        var mx=parseFloat(tr.dataset.mx);
+        var st=parseFloat(tr.dataset.st);
+        var vl=parseFloat(tr.dataset.vl);
+        var id=tid.replace('st-','');
+        var fill=document.getElementById('sf-'+id);
+        var thumb=document.getElementById('sth-'+id);
+        var valEl=document.getElementById('sv-'+id);
+
+        function pct(v){return(v-mn)/(mx-mn)*100;}
+        function snap(v){
+            v=Math.round(v/st)*st;
+            return Math.max(mn,Math.min(mx,parseFloat(v.toFixed(10))));
+        }
+        function apply(v){
+            vl=snap(v);
+            var p=pct(vl);
+            if(fill)  fill.style.width=p+'%';
+            if(thumb) thumb.style.left=p+'%';
+            if(valEl) valEl.textContent=st<1?vl.toFixed(2):Math.round(vl);
+            if(cb) cb(vl);
+        }
+        function fromEv(e){
+            var r=tr.getBoundingClientRect();
+            var cx=e.touches?e.touches[0].clientX:e.clientX;
+            return mn+Math.max(0,Math.min(1,(cx-r.left)/r.width))*(mx-mn);
+        }
+        apply(vl);
+        var dn=false;
+        tr.addEventListener('mousedown',function(e){e.preventDefault();dn=true;apply(fromEv(e));});
+        document.addEventListener('mousemove',function(e){if(dn)apply(fromEv(e));});
+        document.addEventListener('mouseup',function(){dn=false;});
+    }
+
+    // Speed slider — iv[17] и iv[37]
+    initSlider('st-spd',function(v){
+        STV.spd=v;
+        var p=getPlayer();
+        if(p){p.instance_vars[17]=v;p.instance_vars[37]=v;}
+        if(ST.spdLock) C.setSpeed(v);
+    });
+
+    // Attack speed — iv[33]
+    initSlider('st-atk',function(v){
+        STV.atk=v;
+        var p=getPlayer();
+        if(p) p.instance_vars[33]=v;
+        if(ST.atkLock) C.setAtkSpd(v);
+    });
+
+    // HP slider
+    initSlider('st-hp',function(v){
+        STV.hp=v;
+        C.setHP(v);
+    });
+
+    // ============================================================
+    // BUTTONS
+    // ============================================================
+    function btn(id,fn){var e=document.getElementById(id);if(e)e.addEventListener('click',fn);}
+
+    btn('B-killall', function(){C.killAll();msg('Killed all');});
+    btn('B-maxall',  function(){
+        setTog('godMode',true);
+        setTog('instantKill',true);
+        setTog('spdLock',true);
+        C.setHP(99999);C.setGold(999999);C.setLevel(99);C.setXP(999999);
+        msg('Max Everything ON');
+    });
+    btn('B-stopall', function(){
+        C.stopAll();
+        ['godMode','instantKill','freeze','spdLock','atkLock','watchTitle'].forEach(function(k){setTog(k,false);});
+        document.title='WarCall.io';
+        msg('All stopped');
+    });
+    btn('B-gold',    function(){C.setGold(parseInt(document.getElementById('I-gold').value)||0);msg('Gold set');});
+    btn('B-level',   function(){C.setLevel(parseInt(document.getElementById('I-level').value)||1);msg('Level set');});
+    btn('B-xp',      function(){C.setXP(parseInt(document.getElementById('I-xp').value)||0);msg('XP set');});
+    btn('B-kills',   function(){C.setKills(parseInt(document.getElementById('I-kills').value)||0);msg('Kills set');});
+    btn('B-fullhp',  function(){C.setHP(99999);msg('Full HP');});
+    btn('B-fullmana',function(){var p=getPlayer();if(p){p.instance_vars[22]=99999;p.instance_vars[23]=99999;p.instance_vars[74]=99999;}msg('Full Mana');});
+    btn('B-gold999', function(){C.setGold(999999);msg('+999999 Gold');});
+    btn('B-lv99',    function(){C.setLevel(99);msg('Level 99');});
+    btn('B-xpmax',   function(){C.setXP(999999);msg('Max XP');});
+    btn('B-fhp2',    function(){C.setHP(99999);msg('Full HP');});
+    btn('B-fmana2',  function(){var p=getPlayer();if(p){p.instance_vars[22]=99999;p.instance_vars[23]=99999;p.instance_vars[74]=99999;}msg('Full Mana');});
+
+    // ============================================================
+    // DRAG
+    // ============================================================
+    var hdr=document.getElementById('__wdr');
+    var drag=false,dx=0,dy=0;
+    hdr.addEventListener('mousedown',function(e){
+        drag=true;
+        dx=e.clientX-menu.offsetLeft;
+        dy=e.clientY-menu.offsetTop;
+        e.preventDefault();
+    });
+    document.addEventListener('mousemove',function(e){
+        if(!drag)return;
+        menu.style.left=(e.clientX-dx)+'px';
+        menu.style.top=(e.clientY-dy)+'px';
+        menu.style.right='auto';
+    });
+    document.addEventListener('mouseup',function(){drag=false;});
+
+    // ============================================================
+    // INSERT — полностью скрыть/показать
+    // ============================================================
+    document.addEventListener('keydown',function(e){
+        if(e.key==='Insert'){
+            menu.style.display=menu.style.display==='none'?'':'none';
+        }
+    });
+
+    // ============================================================
+    // INFO UPDATER
+    // ============================================================
+    function sv(id,v){var e=document.getElementById(id);if(e)e.textContent=v;}
+
+    function upd(){
+        var p=getPlayer(); if(!p)return;
+        var iv=p.instance_vars;
+        var g=getGold();
+        var gold=g?g.instance_vars[0]:iv[71];
+        var enm=getEnemies().length;
+        var hpP=Math.max(0,Math.min(100,iv[20]/iv[18]*100));
+        var mpP=Math.max(0,Math.min(100,iv[23]/iv[22]*100));
+        var pos=Math.round(p.x)+', '+Math.round(p.y);
+        var fps=rt.fps||'-';
+        var lay=rt.running_layout?rt.running_layout.name:'-';
+
+        // combat
+        sv('ci-spd17', iv[17]);
+        sv('ci-spd37', iv[37]);
+        sv('ci-atkspd',iv[33]);
+        sv('ci-enm',   enm);
+        sv('ci-kl',    iv[35]);
+        sv('ci-dt',    iv[36]);
+        sv('ci-god',   ST.godMode?'ON':'OFF');
+        sv('ci-ik',    ST.instantKill?'ON':'OFF');
+        sv('ci-frz',   ST.freeze?'ON':'OFF');
+        sv('ci-slk',   ST.spdLock?'ON':'OFF');
+        sv('ci-alk',   ST.atkLock?'ON':'OFF');
+
+        // player
+        sv('pi-nick',  iv[19]);
+        sv('pi-champ', iv[30]);
+        sv('pi-lv',    iv[5]);
+        sv('pi-hp',    Math.round(iv[20])+' / '+iv[18]);
+        sv('pi-mana',  Math.round(iv[23])+' / '+iv[22]);
+        sv('pi-spd',   iv[17]);
+        sv('pi-gold',  Math.round(gold));
+        sv('pi-xp',    iv[45]);
+        sv('pi-pos',   pos);
+        sv('pi-uid',   p.uid);
+        var phb=document.getElementById('pi-hpb');
+        var pmb=document.getElementById('pi-manab');
+        if(phb) phb.style.width=hpP+'%';
+        if(pmb) pmb.style.width=mpP+'%';
+
+        // world
+        sv('wi-lay',   lay);
+        sv('wi-enm',   enm);
+        sv('wi-kl',    iv[35]);
+        sv('wi-gold',  Math.round(gold));
+        sv('wi-pos',   pos);
+        sv('wi-fps',   fps);
+
+        // info
+        sv('ii-nick',  iv[19]);
+        sv('ii-champ', iv[30]);
+        sv('ii-skin',  iv[4]);
+        sv('ii-uid',   p.uid);
+        sv('ii-lv',    iv[5]);
+        sv('ii-xp',    iv[45]);
+        sv('ii-hp',    Math.round(iv[20])+' / '+iv[18]);
+        sv('ii-mana',  Math.round(iv[23])+' / '+iv[22]);
+        sv('ii-spd',   iv[17]);
+        sv('ii-atkspd',iv[33]);
+        sv('ii-gold',  Math.round(gold));
+        sv('ii-kl',    iv[35]);
+        sv('ii-dt',    iv[36]);
+        sv('ii-pos',   pos);
+        sv('ii-fps',   fps);
+
+        // all vars dump
+        var vbox=document.getElementById('ii-vars');
+        if(vbox){
+            var html='';
+            iv.forEach(function(v,i){
+                if(v!==0&&v!==''&&v!==null&&v!==undefined){
+                    html+='<span style="color:#444">['+i+']</span> <span style="color:#ccc">'+v+'</span><br>';
+                }
+            });
+            vbox.innerHTML=html;
+        }
+
+        if(ST.watchTitle){
+            document.title='HP:'+Math.round(iv[20])+'/'+iv[18]+
+                ' iv17:'+iv[17]+' G:'+Math.round(gold)+' Lv:'+iv[5];
+        }
+    }
+
+    window.__wcIT=setInterval(upd,400);
+    msg('ready');
+    console.log('WARCALL CHEAT v3.2 | INSERT = hide/show | drag watermark to move');
+})();
